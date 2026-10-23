@@ -133,7 +133,7 @@ An explicit model or thinking-level selection after the handoff takes ownership:
 
 ### What is classified
 
-Only new, user-authored tasks in the top-level session: typed prompts, user-invoked `/skill:` prompts, and queued follow-ups when they are delivered. Steering is never classified, since it amends the task already running. Acknowledgements such as `ok` or `thanks`, synthetic continuation turns, agent-attributed messages, subagents, plan mode, and tasks where prewalk is already armed are skipped.
+By default, only new, user-authored tasks in the top-level session: typed prompts, user-invoked `/skill:` prompts, and queued follow-ups when they are delivered. Set `prewalk.autoSubagents: true` to also classify subagent assignments, including agent-attributed assignments and follow-ups. Steering is never classified, since it amends the task already running. Acknowledgements such as `ok` or `thanks`, synthetic continuation turns, top-level agent-attributed messages, plan mode, restricted-tool subagent sessions, and tasks where prewalk is already armed are skipped.
 
 The judge runs alongside the rest of prompt setup (memory recall, hooks, auto thinking), and its decision is applied just before the request is sent, so it adds latency only when it is the slowest setup step.
 
@@ -152,3 +152,16 @@ Auto-prewalk is an optimization and fails open. A missing native judge, a judge 
 ## Subagent prewalk
 
 Task subagents have separate prewalk controls: agent frontmatter, `task.prewalk`, and per-agent `task.agentPrewalk` overrides. See [Task agent discovery](./task-agent-discovery.md) for their precedence and target selection.
+
+To let the judge decide for subagents too:
+
+```yaml
+prewalk:
+  auto: on
+  autoSubagents: true
+  autoTarget: "@smol"
+```
+
+`prewalk.autoSubagents` defaults to `false`. When enabled, subagents use the same `prewalk.auto` mode (`off`, `suggest`, or `on`), native judge, and `prewalk.autoTarget` as the main session. Under `on`, their `todo` tool is retained when available so the usual handoff gate works. Synthetic yield reminders and other continuations do not start a new auto-prewalk task; the next independent assignment restores the planning model before classification.
+
+An already-armed frontmatter or `task.agentPrewalk`/`task.prewalk` handoff takes precedence and is not reclassified or retargeted. Plan-mode and other restricted-tool subagents remain excluded.

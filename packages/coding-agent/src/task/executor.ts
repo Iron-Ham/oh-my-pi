@@ -151,6 +151,8 @@ import {
 	cfgTierOpenai,
 	cfgRetryFallbackChains,
 	cfgDefaultThinkingLevel,
+	cfgPrewalkAuto,
+	cfgPrewalkAutoSubagents,
 } from "../session/settings";
 import { cfgDisabledProviders } from "../config/model-settings";
 import { getRetryFallbackRole, installRetryFallbackRole } from "../session/retry-fallback-chains";
@@ -4784,14 +4786,17 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			// Todos are parent-owned bookkeeping and stripped from subagents —
 			// except under prewalk, whose plan nudge + todo gate require the
 			// subagent to commit its own todo list before the hand-off.
-			const isParentOwnedTool = (name: string): boolean => !prewalk && name === "todo";
+			const keepTodo =
+				prewalk !== undefined ||
+				(!restrictToolNames && cfgPrewalkAutoSubagents.get(settings) && cfgPrewalkAuto.get(settings) === "on");
+			const isParentOwnedTool = (name: string): boolean => !keepTodo && name === "todo";
 			if (sessionFile !== null) {
 				const reviveCapture: WarmReviveCapture = {
 					sessionFile,
 					spec: sessionSpec,
 					settings: captureSubagentSettings(settings, subagentSettings),
 					parentArtifactManager: preparedSession ? undefined : options.parentArtifactManager,
-					keepTodo: prewalk !== undefined,
+					keepTodo,
 					wake: wakeOptions,
 					agentName: agent.name,
 				};

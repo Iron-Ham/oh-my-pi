@@ -13,7 +13,7 @@ import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import type { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { convertToLlm } from "@oh-my-pi/pi-coding-agent/session/messages";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { cfgPrewalkAuto } from "@oh-my-pi/pi-coding-agent/session/settings";
+import { cfgPrewalkAuto, cfgPrewalkAutoSubagents } from "@oh-my-pi/pi-coding-agent/session/settings";
 import { EAGER_TODO_PRELUDE_MESSAGE_TYPE } from "@oh-my-pi/pi-coding-agent/session/todo-tracker";
 import { executeBuiltinSlashCommand } from "@oh-my-pi/pi-coding-agent/slash-commands/builtin-registry";
 import type { ConfiguredThinkingLevel } from "@oh-my-pi/pi-tui/thinking";
@@ -146,6 +146,7 @@ describe("AgentSession auto-prewalk", () => {
 
 	interface FixtureOptions {
 		auto?: "off" | "suggest" | "on";
+		autoSubagents?: boolean;
 		/** Credential the native judge (default true). */
 		judge?: boolean;
 		agentKind?: "main" | "sub";
@@ -176,6 +177,7 @@ describe("AgentSession auto-prewalk", () => {
 			"prewalk.enabled": false,
 			modelRoles: { judge: "typesafe/jev-1.14.0" },
 			...(options.auto ? { "prewalk.auto": options.auto } : {}),
+			...(options.autoSubagents !== undefined ? { "prewalk.autoSubagents": options.autoSubagents } : {}),
 			...(options.todoEager ? { "todo.eager": options.todoEager } : {}),
 		});
 		settings.setModelRole("smol", `${target.provider}/${target.id}:low`);
@@ -680,7 +682,7 @@ describe("AgentSession auto-prewalk", () => {
 		});
 	});
 
-	it("never judges a subagent's tasks", async () => {
+	it("does not judge subagent tasks by default, even when main-session auto-prewalk is on", async () => {
 		const calls = stubJudge([PREWALK]);
 		const f = createFixture([done("one"), done("two")], { auto: "on", agentKind: "sub" });
 
@@ -689,5 +691,69 @@ describe("AgentSession auto-prewalk", () => {
 
 		expect(asked(calls)).toHaveLength(0);
 		expect(f.requested).toEqual([f.primary.id, f.primary.id]);
+	});
+
+	it.each(["off", "suggest", "on"] as const)("opts subagent assignments into auto-prewalk %s", async auto => {
+		const calls = stubJudge([PREWALK]);
+		const f = createFixture(cycle(), { auto, autoSubagents: true, agentKind: "sub" });
+
+		await f.session.prompt(TASK, { attribution: "agent" });
+
+		expect(asked(calls)).toHaveLength(auto === "off" ? 0 : 1);
+		expect(f.requested).toEqual([f.primary.id, f.primary.id, auto === "on" ? f.target.id : f.primary.id]);
+		if (auto === "suggest") {
+			expect(f.notices).toEqual(["Auto-prewalk: prewalk 0.90"]);
+			expect(f.nudges.flat()).toEqual([]);
+		}
+	});
+
+	it("keeps synthetic subagent continuations on the handoff target, then restores for the next assignment", async () => {
+		const calls = stubJudge([PREWALK, PRIMARY]);
+		const f = createFixture([...cycle(), done("reminder"), done("next")], {
+			auto: "on",
+			autoSubagents: true,
+			agentKind: "sub",
+		});
+
+		await f.session.prompt(TASK, { attribution: "agent" });
+		await f.session.prompt("submit the result", { attribution: "agent", synthetic: true });
+		expect(asked(calls)).toHaveLength(1);
+		expect(f.requested.at(-1)).toBe(f.target.id);
+
+		await f.session.prompt("investigate the remaining race", { attribution: "agent" });
+		expect(asked(calls)).toHaveLength(2);
+		expect(f.requested.at(-1)).toBe(f.primary.id);
+	});
+
+	it("preserves configured subagent prewalk instead of judging or retargeting it", async () => {
+		const calls = stubJudge([PREWALK]);
+		const configured = modelOrThrow("claude-opus-4-6");
+		const f = createFixture(cycle(), {
+			auto: "on",
+			autoSubagents: true,
+			agentKind: "sub",
+			startupArm: configured,
+		});
+
+		await f.session.prompt(TASK, { attribution: "agent" });
+
+		expect(asked(calls)).toHaveLength(0);
+		expect(f.requested).toEqual([f.primary.id, f.primary.id, configured.id]);
+	});
+
+	it("does not arm a subagent when its opt-in is disabled while judgment is pending", async () => {
+		const hold = Promise.withResolvers<void>();
+		const requested = Promise.withResolvers<void>();
+		stubJudge([PREWALK], { hold: hold.promise, requested: requested.resolve });
+		const f = createFixture(cycle(), { auto: "on", autoSubagents: true, agentKind: "sub" });
+
+		const pending = f.session.prompt(TASK, { attribution: "agent" });
+		await requested.promise;
+		cfgPrewalkAutoSubagents.override(f.settings, false);
+		hold.resolve();
+		await pending;
+
+		expect(f.requested).toEqual([f.primary.id, f.primary.id, f.primary.id]);
+		expect(f.session.getPrewalkState()).toBeUndefined();
 	});
 });

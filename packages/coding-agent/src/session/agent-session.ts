@@ -508,6 +508,7 @@ import {
 	cfgDefaultThinkingLevel,
 	cfgExternalThinking,
 	cfgPowerSleepPrevention,
+	cfgPrewalkAutoSubagents,
 	cfgPrewalkAutoTarget,
 	cfgPrewalkEnabled,
 	cfgProviderAppendOnlyContext,
@@ -1860,6 +1861,7 @@ export class AgentSession implements SettingsScope {
 			agent: this.agent,
 			sessionManager: this.sessionManager,
 			settings: this.settings,
+			agentKind: () => this.#agentKind,
 			model: () => this.model,
 			configuredThinkingLevel: () => this.configuredThinkingLevel(),
 			restoreThinkingLevel: level => this.#models.restoreThinkingLevel(level),
@@ -8236,9 +8238,11 @@ export class AgentSession implements SettingsScope {
 		};
 	}
 
-	/** A new top-level task the user authored: a typed prompt or a user-invoked skill, never injected or delegated. */
+	/** A new user task, or an opted-in subagent assignment; never a synthetic continuation. */
 	#isAutoPrewalkTask(message: AgentMessage): boolean {
-		if (this.#agentKind !== "main") return false;
+		if (this.#agentKind === "sub") {
+			return cfgPrewalkAutoSubagents.get(this.settings) && message.role === "user" && !message.synthetic;
+		}
 		if (message.role === "user") return !message.synthetic && message.attribution !== "agent";
 		return message.role === "custom" && isUserInvokedSkillPrompt(message);
 	}
