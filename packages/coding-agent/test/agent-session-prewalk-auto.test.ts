@@ -507,6 +507,70 @@ describe("AgentSession auto-prewalk", () => {
 			expect(f.nudges[1]).toContain("prewalk-plan");
 			expect(f.requested).toEqual([f.primary.id, f.primary.id, f.primary.id, f.target.id]);
 		});
+
+		it.each([
+			["primary", PRIMARY],
+			["prewalk", PREWALK],
+		] as const)("restores and judges a queued subagent assignment routed to %s", async (route, verdict) => {
+			const calls = stubJudge([PREWALK, verdict]);
+			const f = createFixture([...cycle(), ...cycle()], {
+				auto: "on",
+				autoSubagents: true,
+				agentKind: "sub",
+			});
+			const nextTask = "trace the reconnect path, then fix the lost offset";
+			let queued = false;
+			f.session.agent.setOnBeforeYield(async () => {
+				if (queued) return;
+				queued = true;
+				await f.session.prompt(nextTask, { attribution: "agent", streamingBehavior: "followUp" });
+			});
+
+			await f.session.prompt(TASK, { attribution: "agent" });
+			await f.session.waitForIdle();
+
+			expect(asked(calls).map(call => call.state.request)).toEqual([TASK, nextTask]);
+			expect(asked(calls)[1]?.model).toBe(f.primary.id);
+			expect(f.requested).toEqual([
+				f.primary.id,
+				f.primary.id,
+				f.target.id,
+				f.primary.id,
+				f.primary.id,
+				route === "prewalk" ? f.target.id : f.primary.id,
+			]);
+			expect(f.efforts[3]).toBe(Effort.High);
+			expect(f.nudges[3]?.includes("prewalk-plan")).toBe(route === "prewalk");
+		});
+
+		it.each([
+			["steer", false],
+			["followUp", true],
+		] as const)(
+			"does not reroute a subagent's queued %s continuation (synthetic=%s)",
+			async (streamingBehavior, synthetic) => {
+				const calls = stubJudge([PREWALK, PRIMARY]);
+				const f = createFixture([...cycle(), done("continued")], {
+					auto: "on",
+					autoSubagents: true,
+					agentKind: "sub",
+				});
+				const continuation = "continue the current implementation";
+				let queued = false;
+				f.session.agent.setOnBeforeYield(async () => {
+					if (queued) return;
+					queued = true;
+					await f.session.prompt(continuation, { attribution: "agent", streamingBehavior, synthetic });
+				});
+
+				await f.session.prompt(TASK, { attribution: "agent" });
+				await f.session.waitForIdle();
+
+				expect(asked(calls).map(call => call.state.request)).toEqual([TASK]);
+				expect(f.requested).toEqual([f.primary.id, f.primary.id, f.target.id, f.target.id]);
+				expect(f.contexts.at(-1)).toContain(continuation);
+			},
+		);
 	});
 
 	describe("one task at a time", () => {
