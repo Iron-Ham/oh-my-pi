@@ -427,23 +427,31 @@ describe("AgentSession auto-prewalk", () => {
 			expect(f.session.getPrewalkState()).toBeUndefined();
 		});
 
-		it("hands a short follow-up the earlier request and the agent's reply", async () => {
-			const calls = stubJudge([DIRECT, PREWALK]);
-			const reply = "The cursor resets because sync() reads a stale offset. Fix: persist it before awaiting.";
-			const f = createFixture([{ content: [reply] }, ...cycle()], { auto: "on" });
+		it.each(["main", "sub"] as const)(
+			"hands a %s-session follow-up its earlier request and reply",
+			async agentKind => {
+				const calls = stubJudge([DIRECT, PREWALK]);
+				const reply = "The cursor resets because sync() reads a stale offset. Fix: persist it before awaiting.";
+				const f = createFixture([{ content: [reply] }, ...cycle()], {
+					auto: "on",
+					autoSubagents: true,
+					agentKind,
+				});
+				const attribution = agentKind === "sub" ? "agent" : "user";
 
-			await f.session.prompt("why does the sync cursor reset after a reconnect?");
-			await f.session.prompt("do that");
+				await f.session.prompt("why does the sync cursor reset after a reconnect?", { attribution });
+				await f.session.prompt("do that", { attribution });
 
-			const [first, second] = asked(calls);
-			expect(first!.state).toEqual({ request: "why does the sync cursor reset after a reconnect?" });
-			expect(second!.state).toEqual({
-				request: "do that",
-				previous_request: "why does the sync cursor reset after a reconnect?",
-				previous_response: reply,
-			});
-			expect(f.session.model?.id).toBe(f.target.id);
-		});
+				const [first, second] = asked(calls);
+				expect(first!.state).toEqual({ request: "why does the sync cursor reset after a reconnect?" });
+				expect(second!.state).toEqual({
+					request: "do that",
+					previous_request: "why does the sync cursor reset after a reconnect?",
+					previous_response: reply,
+				});
+				expect(f.session.model?.id).toBe(f.target.id);
+			},
+		);
 	});
 
 	describe("queued input", () => {

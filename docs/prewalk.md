@@ -139,6 +139,8 @@ The judge runs alongside the rest of prompt setup (memory recall, hooks, auto th
 
 A follow-up such as `do that` or `continue` cannot be judged alone, so the judge also sees the previous substantive user request and the agent's last reply, each truncated like other small-model input. The current request stays authoritative: the context only resolves what it points at.
 
+For opted-in subagents, the previous delegated assignment counts as request context even though it is agent-attributed. Steering and synthetic continuations are not substituted for that assignment.
+
 ### Manual controls win
 
 A negative, direct, or sub-threshold decision, or a classifier error, leaves the model, thinking level, and prewalk exactly as they were.
@@ -162,6 +164,6 @@ prewalk:
   autoTarget: "@smol"
 ```
 
-`prewalk.autoSubagents` defaults to `false`. When enabled, subagents use the same `prewalk.auto` mode (`off`, `suggest`, or `on`), native judge, and `prewalk.autoTarget` as the main session. Under `on`, their `todo` tool is retained when available so the usual handoff gate works. Synthetic yield reminders and other continuations do not start a new auto-prewalk task; the next independent assignment restores the planning model before classification.
+`prewalk.autoSubagents` defaults to `false`. When enabled, subagents use the same `prewalk.auto` mode (`off`, `suggest`, or `on`), native judge, and `prewalk.autoTarget` as the main session. Under `on`, their `todo` tool is retained when available so the usual handoff gate works. Live setting changes reconcile todo availability before the next model request, including after warm revival; explicit tool lists that exclude todo remain unchanged. Synthetic yield reminders and other continuations do not start a new auto-prewalk task; the next independent assignment restores the planning model before classification.
 
 An already-armed frontmatter or `task.agentPrewalk`/`task.prewalk` handoff takes precedence and is not reclassified or retargeted. Plan-mode and other restricted-tool subagents remain excluded.

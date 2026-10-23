@@ -1869,7 +1869,7 @@ export class AgentSession implements SettingsScope {
 			resolveAutoPrewalkTarget: () => this.#resolveAutoPrewalkTarget(),
 			classifyAutoPrewalk: (request, signal) =>
 				classifyAutoPrewalk(
-					{ request, history: this.agent.state.messages },
+					{ request, history: this.agent.state.messages, agentKind: this.#agentKind },
 					{
 						settings: this.settings,
 						registry: this.#modelRegistry,

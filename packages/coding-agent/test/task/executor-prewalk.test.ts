@@ -41,7 +41,7 @@ function yieldEmittingSession(
 	const session = {
 		...createSessionDefaults(),
 		state: { messages: [] },
-		agent: { state: { systemPrompt: ["test"] } },
+		agent: { state: { systemPrompt: ["test"] }, addBeforeModelCallHook: () => () => {} },
 		model: modelSwitch?.from,
 		servingModel: serving(modelSwitch?.from),
 		extensionRunner: undefined,
